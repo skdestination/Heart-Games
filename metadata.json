@@ -1,0 +1,6 @@
+{
+  "name": "Heart Goals",
+  "description": "A relationship-based self development tracker and rewards app.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

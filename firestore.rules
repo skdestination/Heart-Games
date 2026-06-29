@@ -1,0 +1,176 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} { allow read, write: if false; }
+
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    function isSignedIn() { return request.auth != null; }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt']) &&
+             data.keys().size() <= 4 &&
+             data.email is string && data.email.size() <= 200 &&
+             data.role is string && data.role in ['admin', 'user'] &&
+             (data.partnershipId == null || (data.partnershipId is string && data.partnershipId.size() <= 128)) &&
+             data.createdAt == request.time;
+    }
+
+    function isValidUserUpdate(data) {
+      return data.keys().hasAll(['email', 'role', 'createdAt']) &&
+             data.keys().size() <= 4 &&
+             data.email is string && data.email.size() <= 200 &&
+             data.role is string && data.role in ['admin', 'user'] &&
+             (data.partnershipId == null || (data.partnershipId is string && data.partnershipId.size() <= 128)) &&
+             data.createdAt == existing().createdAt;
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow create: if isSignedIn() && request.auth.uid == userId && isValidUser(incoming());
+      allow update: if isSignedIn() && request.auth.uid == userId && isValidUserUpdate(incoming()) &&
+                    (
+                      incoming().diff(existing()).affectedKeys().hasOnly(['partnershipId'])
+                    );
+    }
+
+    function isPartnershipMember(partnershipId) {
+      let p = get(/databases/$(database)/documents/partnerships/$(partnershipId)).data;
+      return p.adminId == request.auth.uid || p.userId == request.auth.uid;
+    }
+
+    function isValidPartnership(data) {
+      return data.keys().hasAll(['adminId', 'totalHearts', 'streakCount', 'createdAt']) &&
+             data.keys().size() <= 5 &&
+             data.adminId is string && data.adminId.size() <= 128 &&
+             (data.userId == null || (data.userId is string && data.userId.size() <= 128)) &&
+             data.totalHearts is number &&
+             data.streakCount is number &&
+             data.createdAt == request.time;
+    }
+
+    function isValidPartnershipUpdate(data) {
+      return data.keys().hasAll(['adminId', 'totalHearts', 'streakCount', 'createdAt']) &&
+             data.keys().size() <= 5 &&
+             data.adminId is string && data.adminId.size() <= 128 &&
+             (data.userId == null || (data.userId is string && data.userId.size() <= 128)) &&
+             data.totalHearts is number &&
+             data.streakCount is number &&
+             data.createdAt == existing().createdAt &&
+             data.adminId == existing().adminId;
+    }
+
+    match /partnerships/{partnershipId} {
+      allow read: if isSignedIn() && (existing().adminId == request.auth.uid || existing().userId == request.auth.uid || existing().userId == null);
+      allow create: if isSignedIn() && isValidId(partnershipId) && isValidPartnership(incoming()) && incoming().adminId == request.auth.uid;
+      allow update: if isSignedIn() && isValidPartnershipUpdate(incoming()) &&
+                    (
+                      (existing().adminId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['userId', 'totalHearts', 'streakCount'])) ||
+                      (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['totalHearts', 'streakCount'])) ||
+                      (existing().userId == null && incoming().diff(existing()).affectedKeys().hasOnly(['userId']))
+                    );
+    }
+
+    function isValidTask(data) {
+      return data.keys().hasAll(['title', 'description', 'rewardHearts', 'status', 'assigneeId', 'createdAt', 'updatedAt']) &&
+             data.keys().size() <= 9 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.rewardHearts is number &&
+             data.status is string && data.status in ['pending', 'completed', 'approved'] &&
+             data.assigneeId is string && data.assigneeId.size() <= 128 &&
+             (data.get('reminderCount', null) == null || data.get('reminderCount', 0) is number) &&
+             (data.get('reminderInterval', null) == null || (data.get('reminderInterval', '') is string && data.get('reminderInterval', '').size() <= 100)) &&
+             data.createdAt == request.time &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidTaskUpdate(data) {
+      return data.keys().hasAll(['title', 'description', 'rewardHearts', 'status', 'assigneeId', 'createdAt', 'updatedAt']) &&
+             data.keys().size() <= 9 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.description is string && data.description.size() <= 1000 &&
+             data.rewardHearts is number &&
+             data.status is string && data.status in ['pending', 'completed', 'approved'] &&
+             data.assigneeId is string && data.assigneeId.size() <= 128 &&
+             (data.get('reminderCount', null) == null || data.get('reminderCount', 0) is number) &&
+             (data.get('reminderInterval', null) == null || (data.get('reminderInterval', '') is string && data.get('reminderInterval', '').size() <= 100)) &&
+             data.createdAt == existing().createdAt &&
+             data.updatedAt == request.time;
+    }
+
+    match /partnerships/{partnershipId}/tasks/{taskId} {
+      allow read: if isSignedIn() && isPartnershipMember(partnershipId);
+      allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(taskId) && isPartnershipMember(partnershipId) &&
+                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
+                    isValidTask(incoming());
+      allow update: if isSignedIn() && isPartnershipMember(partnershipId) && isValidTaskUpdate(incoming()) &&
+                    (
+                      (get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'rewardHearts', 'status', 'updatedAt', 'reminderCount', 'reminderInterval'])) ||
+                      (get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) && incoming().status == 'completed')
+                    );
+      allow delete: if isSignedIn() && isPartnershipMember(partnershipId) && get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid;
+    }
+
+    function isValidReward(data) {
+      return data.keys().hasAll(['title', 'cost', 'createdAt']) &&
+             data.keys().size() == 3 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.cost is number &&
+             data.createdAt == request.time;
+    }
+    
+    function isValidRewardUpdate(data) {
+      return data.keys().hasAll(['title', 'cost', 'createdAt']) &&
+             data.keys().size() == 3 &&
+             data.title is string && data.title.size() <= 200 &&
+             data.cost is number &&
+             data.createdAt == existing().createdAt;
+    }
+
+    match /partnerships/{partnershipId}/rewards/{rewardId} {
+      allow read: if isSignedIn() && isPartnershipMember(partnershipId);
+      allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(rewardId) && isPartnershipMember(partnershipId) &&
+                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
+                    isValidReward(incoming());
+      allow update: if isSignedIn() && isPartnershipMember(partnershipId) && isValidRewardUpdate(incoming()) &&
+                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['title', 'cost']);
+      allow delete: if isSignedIn() && isPartnershipMember(partnershipId) && get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid;
+    }
+
+    function isValidRedemption(data) {
+      return data.keys().hasAll(['rewardId', 'rewardTitle', 'cost', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().size() == 6 &&
+             data.rewardId is string && data.rewardId.size() <= 128 &&
+             data.rewardTitle is string && data.rewardTitle.size() <= 200 &&
+             data.cost is number &&
+             data.status is string && data.status in ['pending', 'fulfilled'] &&
+             data.createdAt == request.time &&
+             data.updatedAt == request.time;
+    }
+
+    function isValidRedemptionUpdate(data) {
+      return data.keys().hasAll(['rewardId', 'rewardTitle', 'cost', 'status', 'createdAt', 'updatedAt']) &&
+             data.keys().size() == 6 &&
+             data.rewardId is string && data.rewardId.size() <= 128 &&
+             data.rewardTitle is string && data.rewardTitle.size() <= 200 &&
+             data.cost is number &&
+             data.status is string && data.status in ['pending', 'fulfilled'] &&
+             data.createdAt == existing().createdAt &&
+             data.updatedAt == request.time;
+    }
+
+    match /partnerships/{partnershipId}/redemptions/{redemptionId} {
+      allow read: if isSignedIn() && isPartnershipMember(partnershipId);
+      allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(redemptionId) && isPartnershipMember(partnershipId) &&
+                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.userId == request.auth.uid &&
+                    isValidRedemption(incoming());
+      allow update: if isSignedIn() && isPartnershipMember(partnershipId) && isValidRedemptionUpdate(incoming()) &&
+                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
+                    incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
+      allow delete: if isSignedIn() && isPartnershipMember(partnershipId) && get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid;
+    }
+  }
+}

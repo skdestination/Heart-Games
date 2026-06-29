@@ -1,0 +1,6 @@
+{
+  "appId": "com.heartgoals.app",
+  "appName": "Heart Goals",
+  "webDir": "dist",
+  "bundledWebRuntime": false
+}

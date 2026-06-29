@@ -1,0 +1,93 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "A user profile in the Heart Goals app.",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "partnershipId": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "role", "createdAt"]
+    },
+    "Partnership": {
+      "title": "Partnership",
+      "description": "A relationship between an admin and a user.",
+      "type": "object",
+      "properties": {
+        "adminId": { "type": "string" },
+        "userId": { "type": "string" },
+        "totalHearts": { "type": "number" },
+        "streakCount": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["adminId", "totalHearts", "streakCount", "createdAt"]
+    },
+    "Task": {
+      "title": "Task",
+      "description": "A task assigned to a user.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "rewardHearts": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "completed", "approved"] },
+        "assigneeId": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" },
+        "reminderCount": { "type": "number" },
+        "reminderInterval": { "type": "string" }
+      },
+      "required": ["title", "rewardHearts", "status", "assigneeId", "createdAt", "updatedAt"]
+    },
+    "Reward": {
+      "title": "Reward",
+      "description": "A reward that can be redeemed.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "cost": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "cost", "createdAt"]
+    },
+    "Redemption": {
+      "title": "Redemption",
+      "description": "A redeemed reward.",
+      "type": "object",
+      "properties": {
+        "rewardId": { "type": "string" },
+        "rewardTitle": { "type": "string" },
+        "cost": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "fulfilled"] },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["rewardId", "rewardTitle", "cost", "status", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles"
+    },
+    "partnerships/{partnershipId}": {
+      "schema": { "$ref": "#/entities/Partnership" },
+      "description": "Partnership tracking"
+    },
+    "partnerships/{partnershipId}/tasks/{taskId}": {
+      "schema": { "$ref": "#/entities/Task" },
+      "description": "Tasks for a partnership"
+    },
+    "partnerships/{partnershipId}/rewards/{rewardId}": {
+      "schema": { "$ref": "#/entities/Reward" },
+      "description": "Rewards for a partnership"
+    },
+    "partnerships/{partnershipId}/redemptions/{redemptionId}": {
+      "schema": { "$ref": "#/entities/Redemption" },
+      "description": "Redemptions in a partnership"
+    }
+  }
+}
