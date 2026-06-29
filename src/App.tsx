@@ -9,6 +9,7 @@ import { useStore } from './store/useStore';
 import { db } from './lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Partnership } from './types';
+import { Capacitor } from '@capacitor/core';
 import AuthPage from './components/AuthPage';
 import Onboarding from './components/Onboarding';
 import PartnershipSetup from './components/PartnershipSetup';
@@ -73,8 +74,10 @@ export default function App() {
   }
 
   // Developer Control Panel (rendered on top of everything)
-  const renderDevControls = () => (
-    <div className="w-full bg-slate-900 border-b border-pink-500/30 p-3 text-xs flex flex-wrap items-center justify-between gap-2 z-50 relative">
+  const renderDevControls = () => {
+    if (Capacitor.isNativePlatform()) return null;
+    return (
+      <div className="w-full bg-slate-900 border-b border-pink-500/30 p-3 text-xs flex flex-wrap items-center justify-between gap-2 z-50 relative">
       <div className="flex items-center gap-2">
         <span className="text-pink-400 font-bold">🛠️ Developer Sandbox:</span>
         <span className="text-slate-300">Bypass restrictions</span>
@@ -98,7 +101,8 @@ export default function App() {
         )}
       </div>
     </div>
-  );
+    );
+  };
 
   // If in demo mode, skip auth checks entirely!
   if (isDemoMode && userProfile) {
