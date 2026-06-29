@@ -5,6 +5,8 @@ workflows:
     instance_type: mac_mini_m1
     environment:
       node: 22
+      vars:
+        JAVA_HOME: /Library/Java/JavaVirtualMachines/zulu-21.jdk/Contents/Home
     triggering:
       events:
         - push
@@ -20,15 +22,18 @@ workflows:
           npm run build
       - name: Initialize Capacitor and add Android platform
         script: |
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null || echo $JAVA_HOME)
           # If android folder doesn't exist yet, initialize it
           if [ ! -d "android" ]; then
             npx cap add android
           fi
       - name: Synchronize web assets to native Android container
         script: |
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null || echo $JAVA_HOME)
           npx cap sync
       - name: Build native Android Debug APK
         script: |
+          export JAVA_HOME=$(/usr/libexec/java_home -v 21 2>/dev/null || echo $JAVA_HOME)
           cd android
           ./gradlew assembleDebug
     artifacts:
