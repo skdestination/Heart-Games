@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { getDemoTasks, saveDemoTasks, getDemoRewards, saveDemoRewards, getDemoRedemptions, saveDemoRedemptions } from '../lib/demoStorage';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { 
   Heart, 
   Flame, 
@@ -198,6 +199,9 @@ export default function AdminDashboard() {
 
   const handleAdjustHearts = async (e: React.FormEvent) => {
     e.preventDefault();
+    try {
+      await Haptics.impact({ style: ImpactStyle.Heavy });
+    } catch (e) {}
     const amount = parseInt(adjustHeartsAmount) || 0;
     if (!partnership) return;
 
@@ -238,6 +242,9 @@ export default function AdminDashboard() {
   };
 
   const approveTask = async (task: Task) => {
+    try {
+      await Haptics.impact({ style: ImpactStyle.Medium });
+    } catch (e) {}
     if (isDemoMode) {
       const currentTasks = getDemoTasks();
       const updated = currentTasks.map(t => {

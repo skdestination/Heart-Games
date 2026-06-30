@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { getDemoTasks, saveDemoTasks, getDemoRewards, saveDemoRewards, getDemoRedemptions, saveDemoRedemptions } from '../lib/demoStorage';
+import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { 
   Heart, 
   Flame, 
@@ -159,6 +160,10 @@ export default function UserDashboard() {
   }, [partnership?.id, isDemoMode]);
 
   const markTaskCompleted = async (task: Task) => {
+    try {
+      await Haptics.impact({ style: ImpactStyle.Medium });
+    } catch (e) {}
+
     if (isDemoMode) {
       const currentTasks = getDemoTasks();
       const updated = currentTasks.map(t => {
@@ -183,7 +188,11 @@ export default function UserDashboard() {
     }
   };
 
-  const toggleDailyItem = (itemId: string) => {
+  const toggleDailyItem = async (itemId: string) => {
+    try {
+      await Haptics.impact({ style: ImpactStyle.Light });
+    } catch (e) {}
+
     let xpIncrement = 0;
     let heartIncrement = 0;
 
@@ -228,7 +237,10 @@ export default function UserDashboard() {
     }
   };
 
-  const addWater = (amount: number) => {
+  const addWater = async (amount: number) => {
+    try {
+      await Haptics.impact({ style: ImpactStyle.Light });
+    } catch (e) {}
     const prevWater = waterMilliliters;
     const nextWater = Math.min(waterGoal, prevWater + amount);
     setWaterMilliliters(nextWater);
@@ -249,6 +261,10 @@ export default function UserDashboard() {
   };
 
   const redeemReward = async (reward: Reward) => {
+    try {
+      await Haptics.impact({ style: ImpactStyle.Heavy });
+    } catch (e) {}
+
     if (!partnership?.id || (partnership.totalHearts < reward.cost)) return;
 
     if (isDemoMode) {

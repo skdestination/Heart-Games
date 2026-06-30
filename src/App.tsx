@@ -10,6 +10,8 @@ import { db } from './lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Partnership } from './types';
 import { Capacitor } from '@capacitor/core';
+import { App as CapApp } from '@capacitor/app';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import AuthPage from './components/AuthPage';
 import Onboarding from './components/Onboarding';
 import PartnershipSetup from './components/PartnershipSetup';
@@ -19,6 +21,22 @@ import UserDashboard from './components/UserDashboard';
 export default function App() {
   const { user, loading } = useAuth();
   const { userProfile, partnership, setPartnership, isDemoMode, setIsDemoMode, setUserProfile } = useStore();
+
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      StatusBar.setStyle({ style: Style.Dark }).catch(console.error);
+      StatusBar.setOverlaysWebView({ overlay: true }).catch(console.error);
+      
+      CapApp.addListener('backButton', ({ canGoBack }) => {
+        if (!canGoBack) {
+          // If we are at the root, do nothing or exit depending on preference
+          // Preventing default by not calling CapApp.exitApp() keeps the app alive
+        } else {
+          window.history.back();
+        }
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (userProfile?.partnershipId && !isDemoMode) {
