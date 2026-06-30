@@ -1,10 +1,10 @@
 {
-  "projectId": "windy-vine-w52jj",
-  "appId": "1:1011520536835:web:d5ac8c8eb4b78bf693e936",
-  "apiKey": "AIzaSyBbmDNGodDfbV1fzkgj_Xa7m-tENfWvJKw",
-  "authDomain": "windy-vine-w52jj.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-580d25ec-1dd6-4603-a6f7-0e7f9ded5dda",
-  "storageBucket": "windy-vine-w52jj.firebasestorage.app",
-  "messagingSenderId": "1011520536835",
+  "projectId": "heart-goals-6a306",
+  "appId": "1:27554980465:web:d93dcafd4bee0f112531d0",
+  "apiKey": "AIzaSyAYIwI1Kgd-Vl_I4Tu4BBRVMtVwYaeHaX0",
+  "authDomain": "heart-goals-6a306.firebaseapp.com",
+  "firestoreDatabaseId": "ai-studio-heartgoals-580d25ec-1dd6-4603-a6f7-0e7f9ded5dda",
+  "storageBucket": "heart-goals-6a306.firebasestorage.app",
+  "messagingSenderId": "27554980465",
   "measurementId": ""
 }
