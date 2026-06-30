@@ -1,20 +1,24 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { auth, db } from '../lib/firebase';
-import { signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
+import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { useStore } from '../store/useStore';
 import { motion, AnimatePresence } from 'motion/react';
 import { UserProfile } from '../types';
-import { Heart, Sparkles, Award, Shield, ChevronRight, LogIn } from 'lucide-react';
+import { Heart, Sparkles, Award, Shield, ChevronRight, LogIn, Mail, ArrowLeft } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 
 export default function AuthPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [isRegistering, setIsRegistering] = useState(false);
+  
   const { setUserProfile, isDemoMode, setIsDemoMode, setPartnership } = useStore();
   
-  // Custom screen sequence inside Auth: 'welcome' | 'role_select' | 'auth_methods'
-  const [authStep, setAuthStep] = useState<'welcome' | 'auth_methods'>('welcome');
+  // Custom screen sequence inside Auth: 'welcome' | 'role_select' | 'auth_methods' | 'email_auth'
+  const [authStep, setAuthStep] = useState<'welcome' | 'auth_methods' | 'email_auth'>('welcome');
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -29,6 +33,23 @@ export default function AuthPage() {
 
       if (docSnap.exists()) {
         setUserProfile({ id: docSnap.id, ...docSnap.data() } as UserProfile);
+      }
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    try {
+      if (isRegistering) {
+        await createUserWithEmailAndPassword(auth, email, password);
+      } else {
+        await signInWithEmailAndPassword(auth, email, password);
       }
     } catch (err: any) {
       setError(err.message);
@@ -214,6 +235,14 @@ export default function AuthPage() {
                 Continue with Google
               </button>
 
+              <button
+                onClick={() => setAuthStep('email_auth')}
+                className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 px-4 rounded-2xl border border-slate-700 transition-all flex items-center justify-center gap-3 text-xs cursor-pointer"
+              >
+                <Mail className="w-4 h-4" />
+                Continue with Email
+              </button>
+
               {!Capacitor.isNativePlatform() && (
                 <button
                   onClick={startDemoShortcut}
@@ -231,6 +260,69 @@ export default function AuthPage() {
                 Cancel
               </button>
             </div>
+          </motion.div>
+        )}
+
+        {/* STEP 3: EMAIL AUTH */}
+        {authStep === 'email_auth' && (
+          <motion.div 
+            key="email-auth-step"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            transition={{ duration: 0.4 }}
+            className="w-full max-w-sm glass-premium-card p-6 md:p-8 rounded-[2.5rem] flex flex-col items-center relative overflow-hidden border border-rose-500/20"
+          >
+            <button 
+              onClick={() => setAuthStep('auth_methods')}
+              className="absolute top-6 left-6 text-slate-400 hover:text-white cursor-pointer"
+            >
+              <ArrowLeft className="w-5 h-5" />
+            </button>
+
+            <h2 className="text-xl font-extrabold text-white mt-8">
+              {isRegistering ? 'Create Account' : 'Sign In'}
+            </h2>
+            
+            <form onSubmit={handleEmailAuth} className="w-full space-y-4 mt-6">
+              <input
+                type="email"
+                placeholder="Email address"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-white text-sm outline-none focus:border-rose-500 transition-colors"
+                required
+              />
+              <input
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-white text-sm outline-none focus:border-rose-500 transition-colors"
+                required
+              />
+              
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full bg-rose-500 hover:bg-rose-600 text-white font-black py-3 rounded-2xl text-sm transition-all disabled:opacity-50 cursor-pointer"
+              >
+                {loading ? 'Please wait...' : (isRegistering ? 'Sign Up' : 'Sign In')}
+              </button>
+            </form>
+
+            <button
+              onClick={() => setIsRegistering(!isRegistering)}
+              className="mt-4 text-xs text-rose-400 hover:text-rose-300 cursor-pointer"
+            >
+              {isRegistering ? 'Already have an account? Sign In' : 'Need an account? Sign Up'}
+            </button>
+            
+            {error && (
+              <div className="w-full p-3 bg-rose-500/10 border border-rose-500/25 rounded-2xl text-rose-300 text-xs text-center mt-4">
+                {error}
+              </div>
+            )}
           </motion.div>
         )}
 
