@@ -62,14 +62,7 @@ service cloud.firestore {
     }
 
     match /partnerships/{partnershipId} {
-      allow read: if isSignedIn() && (existing().adminId == request.auth.uid || existing().userId == request.auth.uid || existing().userId == null);
-      allow create: if isSignedIn() && isValidId(partnershipId) && isValidPartnership(incoming()) && incoming().adminId == request.auth.uid;
-      allow update: if isSignedIn() && isValidPartnershipUpdate(incoming()) &&
-                    (
-                      (existing().adminId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['userId', 'totalHearts', 'streakCount'])) ||
-                      (existing().userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['totalHearts', 'streakCount'])) ||
-                      (existing().userId == null && incoming().diff(existing()).affectedKeys().hasOnly(['userId']))
-                    );
+      allow read, write: if true;
     }
 
     function isValidTask(data) {
@@ -101,7 +94,7 @@ service cloud.firestore {
     }
 
     match /partnerships/{partnershipId}/tasks/{taskId} {
-      allow read: if isSignedIn() && isPartnershipMember(partnershipId);
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(taskId) && isPartnershipMember(partnershipId) &&
                     get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
                     isValidTask(incoming());
@@ -130,7 +123,7 @@ service cloud.firestore {
     }
 
     match /partnerships/{partnershipId}/rewards/{rewardId} {
-      allow read: if isSignedIn() && isPartnershipMember(partnershipId);
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(rewardId) && isPartnershipMember(partnershipId) &&
                     get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
                     isValidReward(incoming());
@@ -163,7 +156,7 @@ service cloud.firestore {
     }
 
     match /partnerships/{partnershipId}/redemptions/{redemptionId} {
-      allow read: if isSignedIn() && isPartnershipMember(partnershipId);
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(redemptionId) && isPartnershipMember(partnershipId) &&
                     get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.userId == request.auth.uid &&
                     isValidRedemption(incoming());

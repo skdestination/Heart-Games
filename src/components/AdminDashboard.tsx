@@ -465,13 +465,19 @@ export default function AdminDashboard() {
         
         <div className="p-5 glass-premium-card rounded-[2rem] border border-rose-500/20 space-y-4">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => {
+              if (!partnership?.userId) {
+                setActiveAdminAction('send_message'); // Or create a new 'invite' action
+              } else {
+                setActiveAdminAction('send_message');
+              }
+            }}>
               <div className="w-12 h-12 rounded-full bg-rose-500/10 border-2 border-rose-500/30 flex items-center justify-center overflow-hidden">
                 <User className="w-6 h-6 text-rose-400" />
               </div>
               <div>
-                <h4 className="font-extrabold text-sm text-white">Partner User</h4>
-                <p className="text-[10px] text-rose-300 font-black uppercase mt-0.5">Level 12 • Active</p>
+                <h4 className="font-extrabold text-sm text-white">{partnership?.userId ? 'Partner User' : 'Waiting for Partner...'}</h4>
+                <p className="text-[10px] text-rose-300 font-black uppercase mt-0.5">{partnership?.userId ? 'Level 12 • Active' : 'Share code to connect'}</p>
               </div>
             </div>
             

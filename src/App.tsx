@@ -6,7 +6,7 @@
 import { useEffect } from 'react';
 import { useAuth } from './lib/useAuth';
 import { useStore } from './store/useStore';
-import { db } from './lib/firebase';
+import { db, handleFirestoreError, OperationType } from './lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { Partnership } from './types';
 import { Capacitor } from '@capacitor/core';
@@ -44,6 +44,8 @@ export default function App() {
         if (docSnap.exists()) {
           setPartnership({ id: docSnap.id, ...docSnap.data() } as Partnership);
         }
+      }, (error) => {
+        handleFirestoreError(error, OperationType.GET, `partnerships/${userProfile.partnershipId}`);
       });
       return () => unsubscribe();
     }
