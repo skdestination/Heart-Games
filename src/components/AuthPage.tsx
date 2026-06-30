@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { auth, db } from '../lib/firebase';
-import { signInWithPopup, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { signInWithRedirect, GoogleAuthProvider, signInWithEmailAndPassword, createUserWithEmailAndPassword, getRedirectResult } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { useStore } from '../store/useStore';
 import { motion, AnimatePresence } from 'motion/react';
@@ -17,6 +17,16 @@ export default function AuthPage() {
   
   const { setUserProfile, isDemoMode, setIsDemoMode, setPartnership } = useStore();
   
+  useEffect(() => {
+    getRedirectResult(auth).then((result) => {
+      if (result) {
+        // User is signed in
+      }
+    }).catch((err) => {
+      setError(err.message);
+    });
+  }, []);
+  
   // Custom screen sequence inside Auth: 'welcome' | 'role_select' | 'auth_methods' | 'email_auth'
   const [authStep, setAuthStep] = useState<'welcome' | 'auth_methods' | 'email_auth'>('welcome');
 
@@ -25,18 +35,9 @@ export default function AuthPage() {
     setError('');
     try {
       const provider = new GoogleAuthProvider();
-      const result = await signInWithPopup(auth, provider);
-      const user = result.user;
-
-      const docRef = doc(db, 'users', user.uid);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        setUserProfile({ id: docSnap.id, ...docSnap.data() } as UserProfile);
-      }
+      await signInWithRedirect(auth, provider);
     } catch (err: any) {
       setError(err.message);
-    } finally {
       setLoading(false);
     }
   };
@@ -162,6 +163,14 @@ export default function AuthPage() {
                   </>
                 )}
               </motion.button>
+
+              <button
+                onClick={() => setAuthStep('email_auth')}
+                className="w-full py-4 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-3xl border border-slate-700 transition-all flex items-center justify-center gap-3 text-sm cursor-pointer"
+              >
+                <Mail className="w-5 h-5" />
+                <span>Continue with Email</span>
+              </button>
 
               {!Capacitor.isNativePlatform() && (
                 <button 
