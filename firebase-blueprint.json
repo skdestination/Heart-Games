@@ -38,7 +38,10 @@
         "createdAt": { "type": "string" },
         "updatedAt": { "type": "string" },
         "reminderCount": { "type": "number" },
-        "reminderInterval": { "type": "string" }
+        "reminderInterval": { "type": "string" },
+        "approvalType": { "type": "string", "enum": ["manual", "automatic"] },
+        "deadline": { "type": "string" },
+        "penaltyApplied": { "type": "boolean" }
       },
       "required": ["title", "rewardHearts", "status", "assigneeId", "createdAt", "updatedAt"]
     },

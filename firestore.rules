@@ -36,8 +36,8 @@ service cloud.firestore {
     }
 
     function isPartnershipMember(partnershipId) {
-      let p = get(/databases/$(database)/documents/partnerships/$(partnershipId)).data;
-      return p.adminId == request.auth.uid || p.userId == request.auth.uid;
+      let pDoc = get(/databases/$(database)/documents/partnerships/$(partnershipId));
+      return (pDoc != null && (pDoc.data.adminId == request.auth.uid || pDoc.data.userId == request.auth.uid));
     }
 
     function isValidPartnership(data) {
@@ -67,28 +67,34 @@ service cloud.firestore {
 
     function isValidTask(data) {
       return data.keys().hasAll(['title', 'description', 'rewardHearts', 'status', 'assigneeId', 'createdAt', 'updatedAt']) &&
-             data.keys().size() <= 9 &&
+             data.keys().size() <= 13 &&
              data.title is string && data.title.size() <= 200 &&
              data.description is string && data.description.size() <= 1000 &&
              data.rewardHearts is number &&
-             data.status is string && data.status in ['pending', 'completed', 'approved'] &&
+             data.status is string && data.status in ['pending', 'completed', 'approved', 'failed'] &&
              data.assigneeId is string && data.assigneeId.size() <= 128 &&
              (data.get('reminderCount', null) == null || data.get('reminderCount', 0) is number) &&
              (data.get('reminderInterval', null) == null || (data.get('reminderInterval', '') is string && data.get('reminderInterval', '').size() <= 100)) &&
+             (data.get('approvalType', null) == null || data.get('approvalType', '') in ['manual', 'automatic']) &&
+             (data.get('deadline', null) == null || data.get('deadline', '') is string) &&
+             (data.get('penaltyApplied', null) == null || data.get('penaltyApplied', false) is bool) &&
              data.createdAt == request.time &&
              data.updatedAt == request.time;
     }
 
     function isValidTaskUpdate(data) {
       return data.keys().hasAll(['title', 'description', 'rewardHearts', 'status', 'assigneeId', 'createdAt', 'updatedAt']) &&
-             data.keys().size() <= 9 &&
+             data.keys().size() <= 13 &&
              data.title is string && data.title.size() <= 200 &&
              data.description is string && data.description.size() <= 1000 &&
              data.rewardHearts is number &&
-             data.status is string && data.status in ['pending', 'completed', 'approved'] &&
+             data.status is string && data.status in ['pending', 'completed', 'approved', 'failed'] &&
              data.assigneeId is string && data.assigneeId.size() <= 128 &&
              (data.get('reminderCount', null) == null || data.get('reminderCount', 0) is number) &&
              (data.get('reminderInterval', null) == null || (data.get('reminderInterval', '') is string && data.get('reminderInterval', '').size() <= 100)) &&
+             (data.get('approvalType', null) == null || data.get('approvalType', '') in ['manual', 'automatic']) &&
+             (data.get('deadline', null) == null || data.get('deadline', '') is string) &&
+             (data.get('penaltyApplied', null) == null || data.get('penaltyApplied', false) is bool) &&
              data.createdAt == existing().createdAt &&
              data.updatedAt == request.time;
     }
@@ -100,8 +106,8 @@ service cloud.firestore {
                     isValidTask(incoming());
       allow update: if isSignedIn() && isPartnershipMember(partnershipId) && isValidTaskUpdate(incoming()) &&
                     (
-                      (get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'rewardHearts', 'status', 'updatedAt', 'reminderCount', 'reminderInterval'])) ||
-                      (get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']) && incoming().status == 'completed')
+                      (get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'rewardHearts', 'status', 'updatedAt', 'reminderCount', 'reminderInterval', 'approvalType', 'deadline', 'penaltyApplied'])) ||
+                      (get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'penaltyApplied']) && incoming().status in ['pending', 'completed', 'approved', 'failed'])
                     );
       allow delete: if isSignedIn() && isPartnershipMember(partnershipId) && get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid;
     }
@@ -164,6 +170,16 @@ service cloud.firestore {
                     get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
                     incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
       allow delete: if isSignedIn() && isPartnershipMember(partnershipId) && get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid;
+    }
+
+    match /partnerships/{partnershipId}/dailyItems/{itemId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isPartnershipMember(partnershipId);
+    }
+
+    match /partnerships/{partnershipId}/requests/{requestId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isPartnershipMember(partnershipId);
     }
   }
 }

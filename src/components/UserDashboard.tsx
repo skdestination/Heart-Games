@@ -1,12 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
-import { collection, query, onSnapshot, doc, updateDoc, setDoc, serverTimestamp, increment } from 'firebase/firestore';
-import { Task, Reward, Redemption } from '../types';
+import { collection, query, onSnapshot, doc, updateDoc, setDoc, serverTimestamp, increment, deleteDoc } from 'firebase/firestore';
+import { Task, Reward, Redemption, GiftRequest, Partnership, DailyProgressItem } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import confetti from 'canvas-confetti';
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
 import { getDemoTasks, saveDemoTasks, getDemoRewards, saveDemoRewards, getDemoRedemptions, saveDemoRedemptions } from '../lib/demoStorage';
+import { getLevelInfo } from '../lib/helpers';
 import { Haptics, ImpactStyle } from '@capacitor/haptics';
 import { 
   Heart, 
@@ -44,15 +46,6 @@ import {
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 // Seed mock checklist data for high-fidelity representation of Screen 4
-interface DailyProgressItem {
-  id: string;
-  title: string;
-  rewardHearts: number;
-  completed: boolean;
-  category: 'workout' | 'reading' | 'water' | 'meditation' | 'diet';
-  description: string;
-}
-
 const DEFAULT_DAILY_ITEMS: DailyProgressItem[] = [
   { id: 'daily_1', title: 'Morning Workout', rewardHearts: 5, completed: true, category: 'workout', description: 'Complete your full workout session in the morning.' },
   { id: 'daily_2', title: 'Read 20 Pages', rewardHearts: 3, completed: true, category: 'reading', description: 'Read at least 20 pages of your favorite book.' },
@@ -82,8 +75,29 @@ export default function UserDashboard() {
   const [rewardsSubTab, setRewardsSubTab] = useState<'all' | 'claimed'>('all');
 
   // Interactive Level and XP State
-  const [userXp, setUserXp] = useState(850);
-  const [userLevel, setUserLevel] = useState(12);
+  const hearts = partnership?.totalHearts || 0;
+  
+
+  const { level: currentLevel, progressHearts, requiredHearts } = getLevelInfo(hearts);
+  const claimedRewards = partnership?.claimedLevelRewards || [];
+  const canClaimReward = currentLevel > 1 && !claimedRewards.includes(currentLevel - 1);
+
+  const [showLevelUpHearts, setShowLevelUpHearts] = useState(false);
+  const prevLevelRef = useRef(currentLevel);
+
+  useEffect(() => {
+    if (currentLevel > prevLevelRef.current) {
+      // Trigger animations
+      confetti({
+        particleCount: 100,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+      setShowLevelUpHearts(true);
+      setTimeout(() => setShowLevelUpHearts(false), 3000);
+    }
+    prevLevelRef.current = currentLevel;
+  }, [currentLevel]);
 
   // Daily Progress Items (from image)
   const [dailyItems, setDailyItems] = useState<DailyProgressItem[]>(() => {
@@ -96,7 +110,37 @@ export default function UserDashboard() {
     const saved = localStorage.getItem('heartgoals_water_ml');
     return saved ? parseInt(saved) : 1500;
   });
-  const waterGoal = 2000;
+  const [lastWaterIntakeTime, setLastWaterIntakeTime] = useState<number | null>(() => {
+    const saved = localStorage.getItem('heartgoals_last_water_time');
+    return saved ? parseInt(saved) : null;
+  });
+  const waterGoal = dailyItems.find(i => i.category === 'water')?.targetValue || 2000;
+
+  const [showGiftModal, setShowGiftModal] = useState(false);
+  const [requestText, setRequestText] = useState('');
+
+  const claimGift = async () => {
+    if (!partnership?.id) return;
+    try {
+      const giftRequest: GiftRequest = {
+        id: crypto.randomUUID(),
+        level: currentLevel - 1,
+        requestText,
+        status: 'pending',
+        createdAt: new Date().toISOString(),
+      };
+      // Add request to firestore
+      await setDoc(doc(db, 'partnerships', partnership.id, 'requests', giftRequest.id), giftRequest);
+      // Update claimedLevelRewards in partnership
+      await updateDoc(doc(db, 'partnerships', partnership.id), {
+        claimedLevelRewards: [...(partnership.claimedLevelRewards || []), currentLevel - 1]
+      });
+      setShowGiftModal(false);
+      setRequestText('');
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   // Selected Detail Modals
   const [selectedTask, setSelectedTask] = useState<DailyProgressItem | null>(null);
@@ -122,6 +166,38 @@ export default function UserDashboard() {
   }, [waterMilliliters]);
 
   useEffect(() => {
+    if (lastWaterIntakeTime) {
+      localStorage.setItem('heartgoals_last_water_time', lastWaterIntakeTime.toString());
+    }
+  }, [lastWaterIntakeTime]);
+
+  // Reset daily items if the day has changed
+  useEffect(() => {
+    const checkAndReset = async () => {
+      if (!partnership?.id || dailyItems.length === 0) return;
+      const today = new Date().toDateString();
+      const lastReset = localStorage.getItem('heartgoals_last_reset');
+      
+      if (lastReset !== today) {
+        for (const item of dailyItems) {
+          if (item.completed) {
+            try {
+              await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { completed: false });
+            } catch (e) {
+              console.error("Failed to reset item", e);
+            }
+          }
+        }
+        localStorage.setItem('heartgoals_last_reset', today);
+      }
+    };
+    
+    // Check after a small delay to ensure snapshot is loaded
+    const timeout = setTimeout(checkAndReset, 1000);
+    return () => clearTimeout(timeout);
+  }, [partnership?.id, dailyItems]);
+
+  useEffect(() => {
     if (isDemoMode) {
       setTasks(getDemoTasks());
       setRewards(getDemoRewards());
@@ -143,11 +219,17 @@ export default function UserDashboard() {
 
     if (!partnership?.id) return;
     const tasksRef = collection(db, 'partnerships', partnership.id, 'tasks');
+    const dailyItemsRef = collection(db, 'partnerships', partnership.id, 'dailyItems');
     const rewardsRef = collection(db, 'partnerships', partnership.id, 'rewards');
     const redemptionsRef = collection(db, 'partnerships', partnership.id, 'redemptions');
 
     const uTasks = onSnapshot(query(tasksRef), (snap) => {
-      setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task)));
+      const tasksData = snap.docs.map(d => ({ id: d.id, ...d.data() } as Task));
+      setTasks(tasksData);
+      applyPenalties(tasksData, partnership);
+    });
+    const uDailyItems = onSnapshot(query(dailyItemsRef), (snap) => {
+      setDailyItems(snap.docs.map(d => ({ id: d.id, ...d.data() } as DailyProgressItem)));
     });
     const uRewards = onSnapshot(query(rewardsRef), (snap) => {
       setRewards(snap.docs.map(d => ({ id: d.id, ...d.data() } as Reward)));
@@ -156,8 +238,44 @@ export default function UserDashboard() {
       setRedemptions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Redemption)));
     });
 
-    return () => { uTasks(); uRewards(); uRedemptions(); };
+    return () => { uTasks(); uDailyItems(); uRewards(); uRedemptions(); };
   }, [partnership?.id, isDemoMode]);
+
+  const applyPenalties = async (tasks: Task[], partnership: Partnership | null) => {
+    if (!partnership?.id) return;
+    
+    const now = new Date();
+    const tasksToApplyPenalty = tasks.filter(t => 
+      t.status === 'pending' && 
+      t.deadline && 
+      new Date(t.deadline) < now &&
+      !t.penaltyApplied
+    );
+    
+    for (const task of tasksToApplyPenalty) {
+      const penalty = Math.floor(task.rewardHearts / 2);
+      
+      if (isDemoMode) {
+         const currentTasks = getDemoTasks();
+         const updated = currentTasks.map(t => t.id === task.id ? { ...t, penaltyApplied: true } : t);
+         saveDemoTasks(updated);
+         setTasks(updated);
+         setPartnership({
+            ...partnership,
+            totalHearts: Math.max(0, (partnership.totalHearts || 0) - penalty)
+         });
+      } else {
+        await updateDoc(doc(db, 'partnerships', partnership.id, 'tasks', task.id), {
+          penaltyApplied: true,
+          updatedAt: serverTimestamp()
+        });
+        
+        await updateDoc(doc(db, 'partnerships', partnership.id), {
+          totalHearts: increment(-penalty)
+        });
+      }
+    }
+  };
 
   const markTaskCompleted = async (task: Task) => {
     try {
@@ -168,23 +286,41 @@ export default function UserDashboard() {
       const currentTasks = getDemoTasks();
       const updated = currentTasks.map(t => {
         if (t.id === task.id) {
-          return { ...t, status: 'completed' as const, updatedAt: new Date().toISOString() };
+          const newStatus = t.approvalType === 'automatic' ? 'approved' as const : 'completed' as const;
+          return { ...t, status: newStatus, updatedAt: new Date().toISOString() };
         }
         return t;
       });
       saveDemoTasks(updated);
       setTasks(updated);
+      
+      if (task.approvalType === 'automatic' && partnership) {
+        const isOverdue = task.deadline && new Date() > new Date(task.deadline);
+        const actualReward = isOverdue ? Math.floor(task.rewardHearts / 2) : task.rewardHearts;
+        setPartnership({
+          ...partnership,
+          totalHearts: (partnership.totalHearts || 0) + actualReward,
+        });
+      }
       return;
     }
 
     if (!partnership?.id) return;
     try {
+      const isOverdue = task.deadline && new Date() > new Date(task.deadline);
+      const actualReward = isOverdue ? Math.floor(task.rewardHearts / 2) : task.rewardHearts;
+      
       await updateDoc(doc(db, 'partnerships', partnership.id, 'tasks', task.id), {
-        status: 'completed',
+        status: task.approvalType === 'automatic' ? 'approved' : 'completed',
         updatedAt: serverTimestamp()
       });
+      if (task.approvalType === 'automatic') {
+        await updateDoc(doc(db, 'partnerships', partnership.id), {
+          totalHearts: increment(actualReward)
+        });
+      }
     } catch (error) {
-      console.error(error);
+      handleFirestoreError(error, OperationType.UPDATE, `partnerships/${partnership.id}/tasks/${task.id}`);
     }
   };
 
@@ -193,34 +329,23 @@ export default function UserDashboard() {
       await Haptics.impact({ style: ImpactStyle.Light });
     } catch (e) {}
 
-    let xpIncrement = 0;
-    let heartIncrement = 0;
+    const itemToToggle = dailyItems.find(i => i.id === itemId);
+    if (!itemToToggle || itemToToggle.completed) return;
 
-    const updated = dailyItems.map(item => {
-      if (item.id === itemId) {
-        const nextCompleted = !item.completed;
-        if (nextCompleted) {
-          xpIncrement = 50;
-          heartIncrement = item.rewardHearts;
-        } else {
-          heartIncrement = -item.rewardHearts;
-        }
-        return { ...item, completed: nextCompleted };
+    const xpIncrement = 50;
+    const heartIncrement = itemToToggle.rewardHearts || 0;
+
+    if (!isDemoMode && partnership?.id) {
+      try {
+        await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', itemId), {
+          completed: true,
+          completedAt: new Date().toISOString()
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, `partnerships/${partnership.id}/dailyItems/${itemId}`);
       }
-      return item;
-    });
-
-    setDailyItems(updated);
-
-    if (xpIncrement > 0) {
-      setUserXp(prevXp => {
-        const total = prevXp + xpIncrement;
-        if (total >= 1200) {
-          setUserLevel(lvl => lvl + 1);
-          return total - 1200;
-        }
-        return total;
-      });
+    } else {
+      setDailyItems(dailyItems.map(i => i.id === itemId ? { ...i, completed: true } : i));
     }
 
     if (heartIncrement !== 0 && partnership) {
@@ -230,25 +355,35 @@ export default function UserDashboard() {
         totalHearts: nextHearts
       });
       if (!isDemoMode && partnership.id) {
-        updateDoc(doc(db, 'partnerships', partnership.id), {
-          totalHearts: increment(heartIncrement)
-        }).catch(console.error);
+        try {
+          await updateDoc(doc(db, 'partnerships', partnership.id), {
+            totalHearts: increment(heartIncrement)
+          });
+        } catch (error) {
+          handleFirestoreError(error, OperationType.UPDATE, `partnerships/${partnership.id}`);
+        }
       }
     }
   };
 
   const addWater = async (amount: number) => {
+    const now = Date.now();
+    if (lastWaterIntakeTime && (now - lastWaterIntakeTime < 30 * 60 * 1000)) {
+      alert("Please wait 30 minutes before adding another glass of water.");
+      return;
+    }
+    
     try {
       await Haptics.impact({ style: ImpactStyle.Light });
     } catch (e) {}
     const prevWater = waterMilliliters;
     const nextWater = Math.min(waterGoal, prevWater + amount);
     setWaterMilliliters(nextWater);
+    setLastWaterIntakeTime(now);
 
     if (nextWater >= waterGoal && prevWater < waterGoal) {
       // Just unlocked the water daily goal! Toggle it in list!
       setDailyItems(items => items.map(it => it.category === 'water' && !it.completed ? { ...it, completed: true } : it));
-      setUserXp(p => p + 100);
       if (partnership) {
         setPartnership({ ...partnership, totalHearts: partnership.totalHearts + 2 });
         if (!isDemoMode && partnership.id) {
@@ -330,6 +465,7 @@ export default function UserDashboard() {
 
   const pendingTasks = tasks.filter(t => t.status === 'pending');
   const awaitingApprovalTasks = tasks.filter(t => t.status === 'completed');
+  const approvedTasks = tasks.filter(t => t.status === 'approved');
 
   // Category Icon Map
   const getCategoryIcon = (cat: string) => {
@@ -344,7 +480,28 @@ export default function UserDashboard() {
 
   return (
     <div className="flex flex-col min-h-screen bg-[#060306] pb-28 relative text-slate-100 overflow-x-hidden">
-      
+      {/* Heart Animation Overlay */}
+      <AnimatePresence>
+        {showLevelUpHearts && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none"
+          >
+            {[...Array(20)].map((_, i) => (
+              <motion.div
+                key={i}
+                initial={{ scale: 0, y: 0 }}
+                animate={{ scale: [1, 1.5, 0], y: -200 - Math.random() * 200, x: (Math.random() - 0.5) * 200 }}
+                transition={{ duration: 2, delay: Math.random() * 0.5 }}
+                className="absolute"
+              >
+                <Heart className="w-10 h-10 text-rose-500 fill-rose-500" />
+              </motion.div>
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Background Neon Blurs */}
       <div className="absolute top-[-100px] left-1/2 -translate-x-1/2 w-[350px] h-[350px] bg-rose-500/10 rounded-full blur-[110px] pointer-events-none"></div>
       <div className="absolute top-[40%] right-[-100px] w-[250px] h-[250px] bg-violet-600/5 rounded-full blur-[90px] pointer-events-none"></div>
@@ -410,14 +567,14 @@ export default function UserDashboard() {
                 <div className="flex justify-between items-center mb-2">
                   <div className="flex items-center gap-1.5">
                     <Shield className="w-4 h-4 text-rose-400 animate-pulse" />
-                    <span className="text-xs font-black uppercase tracking-wider text-rose-300">Level {userLevel}</span>
+                    <span className="text-xs font-black uppercase tracking-wider text-rose-300">Level {currentLevel}</span>
                   </div>
-                  <span className="text-xs font-bold text-slate-400">{userXp} / 1200 XP</span>
+                  <span className="text-xs font-bold text-slate-400">{progressHearts} / {requiredHearts} Hearts</span>
                 </div>
                 <div className="w-full h-2.5 bg-rose-950/40 rounded-full overflow-hidden p-[1px] border border-rose-500/10">
                   <motion.div 
                     initial={{ width: 0 }}
-                    animate={{ width: `${(userXp / 1200) * 100}%` }}
+                    animate={{ width: `${(progressHearts / requiredHearts) * 100}%` }}
                     className="h-full rounded-full bg-gradient-to-r from-rose-500 via-pink-400 to-violet-500 shadow-[0_0_12px_rgba(244,63,94,0.6)]"
                   />
                 </div>
@@ -456,51 +613,41 @@ export default function UserDashboard() {
                 </div>
 
                 <div className="space-y-2.5">
-                  {dailyItems.map((item) => (
-                    <div 
-                      key={item.id}
-                      className="p-4 glass-premium-card rounded-2xl flex items-center justify-between border border-rose-500/10 hover:border-rose-500/25 transition-all group cursor-pointer"
-                      onClick={() => {
-                        if (item.category === 'water') {
-                          setIsWaterModalOpen(true);
-                        } else {
-                          setSelectedTask(item);
-                        }
-                      }}
-                    >
-                      <div className="flex items-center gap-3.5">
-                        <div className="p-2.5 bg-[#170817] border border-rose-500/20 rounded-xl">
-                          {getCategoryIcon(item.category)}
-                        </div>
-                        <div>
-                          <h4 className="text-sm font-bold text-slate-100 group-hover:text-rose-300 transition-colors">{item.title}</h4>
-                          <span className="text-[10px] text-rose-400 font-black flex items-center gap-1 mt-0.5">
-                            <Heart className="w-2.5 h-2.5 fill-rose-400" />
-                            <span>+{item.rewardHearts} Hearts</span>
-                          </span>
-                        </div>
-                      </div>
-
-                      {/* Custom premium checkbox */}
-                      <button 
-                        onClick={(e) => {
-                          e.stopPropagation();
+                  {dailyItems.filter(i => !i.completed).length === 0 ? (
+                    <div className="text-center py-6 rounded-2xl border border-dashed border-rose-500/20 bg-[#120712]/30">
+                      <Heart className="w-6 h-6 text-rose-500/40 mx-auto mb-2" />
+                      <p className="text-xs font-extrabold text-slate-400">All caught up!</p>
+                      <p className="text-[10px] text-slate-500 mt-1">See you tomorrow.</p>
+                    </div>
+                  ) : (
+                    dailyItems.filter(i => !i.completed).map((item) => (
+                      <div 
+                        key={item.id}
+                        className="p-4 glass-premium-card rounded-2xl flex items-center justify-between border border-rose-500/10 hover:border-rose-500/25 transition-all group cursor-pointer"
+                        onClick={() => {
                           if (item.category === 'water') {
                             setIsWaterModalOpen(true);
                           } else {
-                            toggleDailyItem(item.id);
+                            setSelectedTask(item);
                           }
                         }}
-                        className={`w-6 h-6 rounded-full flex items-center justify-center transition-all border ${
-                          item.completed 
-                            ? 'bg-rose-500 border-rose-400 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)]' 
-                            : 'bg-transparent border-slate-600 hover:border-rose-500'
-                        }`}
                       >
-                        {item.completed && <Check className="w-3.5 h-3.5 stroke-[3px]" />}
-                      </button>
-                    </div>
-                  ))}
+                        <div className="flex items-center gap-3.5">
+                          <div className="p-2.5 bg-[#170817] border border-rose-500/20 rounded-xl">
+                            {getCategoryIcon(item.category)}
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-100 group-hover:text-rose-300 transition-colors">{item.title}</h4>
+                            <span className="text-[10px] text-rose-400 font-black flex items-center gap-1 mt-0.5">
+                              <Heart className="w-2.5 h-2.5 fill-rose-400" />
+                              <span>+{item.rewardHearts} Hearts</span>
+                            </span>
+                          </div>
+                        </div>
+                        {/* Custom premium checkbox removed */}
+                      </div>
+                    ))
+                  )}
                 </div>
               </div>
 
@@ -595,6 +742,26 @@ export default function UserDashboard() {
                         <div className="flex items-center gap-1.5 text-amber-400/90 text-[10px] bg-amber-500/10 border border-amber-500/20 px-2.5 py-0.5 rounded-full font-black">
                           <Clock className="w-2.5 h-2.5 animate-spin" />
                           <span>Under Review</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {approvedTasks.length > 0 && (
+                <div className="space-y-3 pt-2">
+                  <h3 className="text-[10px] text-green-400 font-extrabold uppercase tracking-widest flex items-center gap-1.5 pl-1">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    <span>Completed ({approvedTasks.length})</span>
+                  </h3>
+                  <div className="space-y-2">
+                    {approvedTasks.map(task => (
+                      <div key={task.id} className="p-4 bg-green-950/20 border border-green-500/10 rounded-2xl flex justify-between items-center opacity-70">
+                        <span className="text-xs text-slate-400 font-semibold line-through">{task.title}</span>
+                        <div className="flex items-center gap-1.5 text-green-400 text-[10px] bg-green-500/10 border border-green-500/20 px-2.5 py-0.5 rounded-full font-black">
+                          <CheckCircle2 className="w-2.5 h-2.5" />
+                          <span>Done</span>
                         </div>
                       </div>
                     ))}
@@ -826,7 +993,7 @@ export default function UserDashboard() {
                     </div>
                     <div>
                       <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Level</p>
-                      <p className="text-lg font-black text-violet-400 mt-0.5">{userLevel}</p>
+                      <p className="text-lg font-black text-violet-400 mt-0.5">{currentLevel}</p>
                     </div>
                   </div>
                 </div>
@@ -838,6 +1005,27 @@ export default function UserDashboard() {
                 <h4 className="text-sm font-black text-white leading-snug">Keep growing together, <br />one goal at a time. 💕</h4>
                 <p className="text-[11px] text-rose-300 font-extrabold mt-2 uppercase tracking-widest">You + Me = Unstoppable 💪</p>
               </div>
+
+              {canClaimReward && (
+                <button onClick={() => setShowGiftModal(true)} className="w-full p-4 bg-violet-500 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2">
+                  <Sparkles className="w-4 h-4" />
+                  Claim Level {currentLevel - 1} Reward!
+                </button>
+              )}
+
+              {showGiftModal && (
+                <div className="fixed inset-0 bg-black/80 flex items-center justify-center p-4 z-50">
+                  <div className="bg-slate-900 p-6 rounded-3xl w-full max-w-sm space-y-4">
+                    <h3 className="text-white font-black text-lg">Special Reward!</h3>
+                    <p className="text-slate-400 text-sm">You leveled up! Ask for a gift.</p>
+                    <input type="text" value={requestText} onChange={e => setRequestText(e.target.value)} placeholder="What do you want?" className="w-full p-3 bg-slate-800 text-white rounded-xl" />
+                    <div className="flex gap-2">
+                      <button onClick={() => setShowGiftModal(false)} className="flex-1 p-3 bg-slate-700 text-white rounded-xl">Cancel</button>
+                      <button onClick={claimGift} className="flex-1 p-3 bg-rose-500 text-white rounded-xl">Send Request</button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Menu Options (Screen 11) */}
               <div className="p-2 glass-premium-card rounded-3xl border border-rose-500/10 divide-y divide-rose-500/5">

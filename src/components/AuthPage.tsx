@@ -107,8 +107,9 @@ export default function AuthPage() {
       id: 'demo_partnership',
       adminId: 'demo_admin',
       userId: 'demo_user',
-      totalHearts: 124,
-      streakCount: 7,
+      totalHearts: 0,
+      streakCount: 0,
+      claimedLevelRewards: [],
       createdAt: new Date().toISOString()
     });
   };

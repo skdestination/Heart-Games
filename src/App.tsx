@@ -69,8 +69,9 @@ export default function App() {
         id: 'demo_partnership',
         adminId: 'demo_admin',
         userId: 'demo_user',
-        totalHearts: 120,
-        streakCount: 7,
+        totalHearts: 0,
+        streakCount: 0,
+        claimedLevelRewards: [],
         createdAt: new Date().toISOString()
       });
     }

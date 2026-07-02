@@ -7,6 +7,7 @@ const DEFAULT_TASKS: Task[] = [
     description: 'Find a great film and make some delicious popcorn!',
     rewardHearts: 35,
     status: 'pending',
+    approvalType: 'manual',
     assigneeId: 'demo_user',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -17,6 +18,7 @@ const DEFAULT_TASKS: Task[] = [
     description: 'Cook something nutritious and clean up afterwards.',
     rewardHearts: 50,
     status: 'completed', // starts as completed so you can see it in Approvals immediately!
+    approvalType: 'manual',
     assigneeId: 'demo_user',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
@@ -27,6 +29,7 @@ const DEFAULT_TASKS: Task[] = [
     description: 'Keep the shared space pristine.',
     rewardHearts: 25,
     status: 'pending',
+    approvalType: 'manual',
     assigneeId: 'demo_user',
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()

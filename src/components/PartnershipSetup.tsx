@@ -21,8 +21,8 @@ export default function PartnershipSetup() {
       const newPartnership = {
         adminId: userProfile.id,
         userId: null,
-        totalHearts: 124,
-        streakCount: 7,
+        totalHearts: 0,
+        streakCount: 0,
         createdAt: serverTimestamp(),
       };
       await setDoc(pRef, newPartnership);

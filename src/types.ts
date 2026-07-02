@@ -15,6 +15,19 @@ export interface Partnership {
   totalHearts: number;
   streakCount: number;
   createdAt: string;
+  claimedLevelRewards: number[];
+}
+
+export interface DailyProgressItem {
+  id: string;
+  title: string;
+  rewardHearts: number;
+  completed: boolean;
+  category: 'workout' | 'reading' | 'water' | 'meditation' | 'diet';
+  description: string;
+  targetValue?: number; // e.g. 2000 for water
+  unit?: string; // e.g. 'ml'
+  rule?: string; // e.g. 'Complete before 10 AM'
 }
 
 export interface Task {
@@ -29,6 +42,17 @@ export interface Task {
   reminderCount?: number;
   reminderInterval?: string;
   reminderTimings?: string[];
+  approvalType: 'manual' | 'automatic';
+  deadline?: string;
+  penaltyApplied?: boolean;
+}
+
+export interface GiftRequest {
+  id: string;
+  level: number;
+  requestText: string;
+  status: 'pending' | 'fulfilled';
+  createdAt: string;
 }
 
 export interface Reward {

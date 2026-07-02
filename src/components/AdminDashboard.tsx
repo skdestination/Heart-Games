@@ -1,8 +1,9 @@
+import { getLevelInfo } from '../lib/helpers';
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { db, handleFirestoreError, OperationType } from '../lib/firebase';
 import { collection, query, onSnapshot, doc, updateDoc, setDoc, serverTimestamp, deleteDoc, increment } from 'firebase/firestore';
-import { Task, Reward, Redemption } from '../types';
+import { Task, Reward, Redemption, GiftRequest, DailyProgressItem } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { auth } from '../lib/firebase';
 import { signOut } from 'firebase/auth';
@@ -40,12 +41,14 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 export default function AdminDashboard() {
   const { userProfile, partnership, isDemoMode, setPartnership } = useStore();
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [dailyItems, setDailyItems] = useState<DailyProgressItem[]>([]);
   const [rewards, setRewards] = useState<Reward[]>([]);
   const [redemptions, setRedemptions] = useState<Redemption[]>([]);
+  const [requests, setRequests] = useState<GiftRequest[]>([]);
 
   // Selected sub-view/modal trigger based on mockup Grid actions
   const [activeAdminAction, setActiveAdminAction] = useState<
-    'none' | 'add_task' | 'manage_hearts' | 'manage_rewards' | 'approve_tasks' | 'analytics' | 'send_message'
+    'none' | 'add_task' | 'manage_hearts' | 'manage_rewards' | 'approve_tasks' | 'analytics' | 'send_message' | 'manage_progress' | 'view_progress'
   >('none');
 
   // Input states
@@ -54,6 +57,8 @@ export default function AdminDashboard() {
   const [newTaskReward, setNewTaskReward] = useState('10');
   const [reminderCount, setReminderCount] = useState(3);
   const [reminderInterval, setReminderInterval] = useState('Every 2 hours');
+  const [newApprovalType, setNewApprovalType] = useState<'manual' | 'automatic'>('manual');
+  const [newDeadline, setNewDeadline] = useState('');
   
   const [newRewardTitle, setNewRewardTitle] = useState('');
   const [newRewardCost, setNewRewardCost] = useState('20');
@@ -89,11 +94,16 @@ export default function AdminDashboard() {
 
     if (!partnership?.id) return;
     const tasksRef = collection(db, 'partnerships', partnership.id, 'tasks');
+    const dailyItemsRef = collection(db, 'partnerships', partnership.id, 'dailyItems');
     const rewardsRef = collection(db, 'partnerships', partnership.id, 'rewards');
     const redemptionsRef = collection(db, 'partnerships', partnership.id, 'redemptions');
+    const requestsRef = collection(db, 'partnerships', partnership.id, 'requests');
 
     const uTasks = onSnapshot(query(tasksRef), (snap) => {
       setTasks(snap.docs.map(d => ({ id: d.id, ...d.data() } as Task)));
+    });
+    const uDailyItems = onSnapshot(query(dailyItemsRef), (snap) => {
+      setDailyItems(snap.docs.map(d => ({ id: d.id, ...d.data() } as DailyProgressItem)));
     });
     const uRewards = onSnapshot(query(rewardsRef), (snap) => {
       setRewards(snap.docs.map(d => ({ id: d.id, ...d.data() } as Reward)));
@@ -101,8 +111,11 @@ export default function AdminDashboard() {
     const uRedemptions = onSnapshot(query(redemptionsRef), (snap) => {
       setRedemptions(snap.docs.map(d => ({ id: d.id, ...d.data() } as Redemption)));
     });
+    const uRequests = onSnapshot(query(requestsRef), (snap) => {
+      setRequests(snap.docs.map(d => ({ id: d.id, ...d.data() } as GiftRequest)));
+    });
 
-    return () => { uTasks(); uRewards(); uRedemptions(); };
+    return () => { uTasks(); uDailyItems(); uRewards(); uRedemptions(); uRequests(); };
   }, [partnership?.id, isDemoMode]);
 
   const handleCreateTask = async (e: React.FormEvent) => {
@@ -122,6 +135,8 @@ export default function AdminDashboard() {
          updatedAt: new Date().toISOString(),
          reminderCount: reminderCount,
          reminderInterval: reminderInterval,
+         approvalType: newApprovalType,
+         deadline: newDeadline || undefined,
        };
        const updated = [newTask, ...currentTasks];
        saveDemoTasks(updated);
@@ -131,6 +146,7 @@ export default function AdminDashboard() {
        setNewTaskReward('10');
        setReminderCount(3);
        setReminderInterval('Every 2 hours');
+       setNewDeadline('');
        setActiveAdminAction('none');
        return;
     }
@@ -148,12 +164,15 @@ export default function AdminDashboard() {
         updatedAt: serverTimestamp(),
         reminderCount: reminderCount,
         reminderInterval: reminderInterval,
+        approvalType: newApprovalType,
+        deadline: newDeadline || null,
       });
       setNewTaskTitle('');
       setNewTaskDescription('');
       setNewTaskReward('10');
       setReminderCount(3);
       setReminderInterval('Every 2 hours');
+      setNewDeadline('');
       setActiveAdminAction('none');
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'tasks');
@@ -427,6 +446,36 @@ export default function AdminDashboard() {
           </div>
         </motion.div>
 
+        {/* MANAGE PROGRESS ACTION CARD */}
+        <motion.div 
+          whileHover={{ translateY: -3 }}
+          onClick={() => setActiveAdminAction('manage_progress')}
+          className="p-5 glass-premium-card rounded-3xl border border-rose-500/15 text-center flex flex-col items-center justify-center gap-3 cursor-pointer group"
+        >
+          <div className="w-12 h-12 bg-rose-500/10 group-hover:bg-rose-500/20 border border-rose-500/30 rounded-2xl flex items-center justify-center text-rose-400 shadow-lg">
+            <Activity className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-extrabold text-sm text-white">Progress Items</h4>
+            <p className="text-[10px] text-slate-400 font-bold mt-0.5">Edit daily goals</p>
+          </div>
+        </motion.div>
+
+        {/* VIEW TODAY'S PROGRESS ACTION CARD */}
+        <motion.div 
+          whileHover={{ translateY: -3 }}
+          onClick={() => setActiveAdminAction('view_progress')}
+          className="p-5 glass-premium-card rounded-3xl border border-rose-500/15 text-center flex flex-col items-center justify-center gap-3 cursor-pointer group"
+        >
+          <div className="w-12 h-12 bg-rose-500/10 group-hover:bg-rose-500/20 border border-rose-500/30 rounded-2xl flex items-center justify-center text-rose-400 shadow-lg">
+            <TrendingUp className="w-5 h-5" />
+          </div>
+          <div>
+            <h4 className="font-extrabold text-sm text-white">View Progress</h4>
+            <p className="text-[10px] text-slate-400 font-bold mt-0.5">Today's checklist</p>
+          </div>
+        </motion.div>
+
         {/* ANALYTICS ACTION CARD */}
         <motion.div 
           whileHover={{ translateY: -3 }}
@@ -477,7 +526,7 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <h4 className="font-extrabold text-sm text-white">{partnership?.userId ? 'Partner User' : 'Waiting for Partner...'}</h4>
-                <p className="text-[10px] text-rose-300 font-black uppercase mt-0.5">{partnership?.userId ? 'Level 12 • Active' : 'Share code to connect'}</p>
+                <p className="text-[10px] text-rose-300 font-black uppercase mt-0.5">{partnership?.userId ? `Level ${getLevelInfo(partnership?.totalHearts || 0).level} • Active` : 'Share code to connect'}</p>
               </div>
             </div>
             
@@ -489,11 +538,14 @@ export default function AdminDashboard() {
 
           <div className="space-y-1">
             <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase">
-              <span>Level Progress</span>
-              <span>850 / 1200 XP</span>
+              <span>Daily Tasks Progress</span>
+              <span>{dailyItems.filter(i => i.completed).length} / {dailyItems.length}</span>
             </div>
             <div className="w-full h-2 bg-rose-950/50 rounded-full overflow-hidden border border-rose-500/10">
-              <div className="h-full rounded-full bg-gradient-to-r from-rose-500 to-violet-500" style={{ width: '70.8%' }}></div>
+              <div 
+                className="h-full rounded-full bg-gradient-to-r from-rose-500 to-violet-500 transition-all duration-500" 
+                style={{ width: `${dailyItems.length > 0 ? (dailyItems.filter(i => i.completed).length / dailyItems.length) * 100 : 0}%` }}>
+              </div>
             </div>
           </div>
         </div>
@@ -578,6 +630,24 @@ export default function AdminDashboard() {
                     className="w-full p-3 bg-slate-950 border border-rose-500/20 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-rose-500"
                   />
                 </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Approval Type</label>
+                  <select
+                    value={newApprovalType} onChange={e => setNewApprovalType(e.target.value as 'manual' | 'automatic')}
+                    className="w-full p-3 bg-slate-950 border border-rose-500/20 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-rose-500"
+                  >
+                    <option value="manual">Manual Approval</option>
+                    <option value="automatic">Automatic Approval</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Deadline</label>
+                  <input 
+                    type="datetime-local"
+                    value={newDeadline} onChange={e => setNewDeadline(e.target.value)}
+                    className="w-full p-3 bg-slate-950 border border-rose-500/20 rounded-xl text-sm font-bold text-white focus:outline-none focus:border-rose-500"
+                  />
+                </div>
                 <button type="submit" className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl text-xs font-black shadow-md shadow-rose-500/25 cursor-pointer mt-2">
                   Assign Task
                 </button>
@@ -587,7 +657,7 @@ export default function AdminDashboard() {
               <div className="pt-2 border-t border-rose-500/10 space-y-2">
                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Active Assigned Tasks</p>
                 <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
-                  {tasks.map(t => (
+                  {tasks.filter(t => t.status === 'pending').map(t => (
                     <div key={t.id} className="p-2.5 bg-slate-950/40 rounded-xl flex justify-between items-center text-xs border border-white/[0.02] gap-2">
                       <div className="flex-1 min-w-0">
                         <span className="font-semibold block truncate text-slate-100">{t.title}</span>
@@ -643,12 +713,210 @@ export default function AdminDashboard() {
                 <button type="submit" className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl text-xs font-black shadow-md shadow-rose-500/25 cursor-pointer">
                   Save Adjustment
                 </button>
+                <button type="button" onClick={async () => {
+                   if(confirm('Are you sure you want to reset all hearts to zero?')) {
+                     await updateDoc(doc(db, 'partnerships', partnership!.id), { totalHearts: 0 });
+                     setActiveAdminAction('none');
+                   }
+                }} className="w-full py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-2xl text-xs font-black cursor-pointer">
+                  Reset Hearts to Zero
+                </button>
               </form>
             </motion.div>
           </motion.div>
         )}
 
-        {/* MANAGE REWARDS MODAL */}
+        {/* VIEW PROGRESS MODAL */}
+        {activeAdminAction === 'view_progress' && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-[#060306]/90 flex items-center justify-center p-5 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 15 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 15 }}
+              className="w-full max-w-sm glass-premium-card rounded-[2.5rem] p-6 border border-rose-500/35 space-y-4 max-h-[80vh] flex flex-col"
+            >
+              <div className="flex justify-between items-center shrink-0">
+                <h3 className="text-base font-extrabold text-white">Today's Progress</h3>
+                <button onClick={() => setActiveAdminAction('none')} className="p-1.5 bg-rose-500/10 rounded-full text-rose-400 cursor-pointer"><X className="w-4 h-4" /></button>
+              </div>
+              
+              <div className="space-y-1 shrink-0">
+                <div className="flex justify-between text-[10px] text-slate-400 font-bold uppercase">
+                  <span>Daily Tasks Progress</span>
+                  <span>{dailyItems.filter(i => i.completed).length} / {dailyItems.length}</span>
+                </div>
+                <div className="w-full h-2 bg-rose-950/50 rounded-full overflow-hidden border border-rose-500/10">
+                  <div 
+                    className="h-full rounded-full bg-gradient-to-r from-rose-500 to-violet-500 transition-all duration-500" 
+                    style={{ width: `${dailyItems.length > 0 ? (dailyItems.filter(i => i.completed).length / dailyItems.length) * 100 : 0}%` }}>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2.5 overflow-y-auto pr-1 pb-4">
+                {dailyItems.map(item => (
+                  <div key={item.id} className="p-3 bg-slate-950/40 rounded-xl border border-rose-500/10 flex items-center justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-xs font-bold text-slate-200">{item.title}</h4>
+                      <p className="text-[9px] text-slate-500">{item.rule || item.description}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[10px] text-rose-400 font-bold">+{item.rewardHearts} <Heart className="w-2.5 h-2.5 inline fill-rose-400" /></span>
+                      <button
+                        onClick={async () => {
+                          if (!partnership?.id) return;
+                          await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { completed: !item.completed });
+                        }}
+                        className={`w-6 h-6 rounded-md flex items-center justify-center border transition-all ${item.completed ? 'bg-rose-500 border-rose-500' : 'bg-transparent border-rose-500/30'}`}
+                      >
+                        {item.completed && <Check className="w-3 h-3 text-white" />}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
+        {/* MANAGE PROGRESS MODAL */}
+        {activeAdminAction === 'manage_progress' && (
+          <motion.div 
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 bg-[#060306]/90 flex items-center justify-center p-5 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 15 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 15 }}
+              className="w-full max-w-sm glass-premium-card rounded-[2.5rem] p-6 border border-rose-500/35 space-y-4"
+            >
+              <div className="flex justify-between items-center">
+                <h3 className="text-base font-extrabold text-white">Daily Progress Items</h3>
+                <button onClick={() => setActiveAdminAction('none')} className="p-1.5 bg-rose-500/10 rounded-full text-rose-400 cursor-pointer"><X className="w-4 h-4" /></button>
+              </div>
+
+              {/* List of existing progress items */}
+              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+                {dailyItems.map(item => (
+                  <div key={item.id} className="p-4 bg-slate-950/60 rounded-2xl border border-white/[0.05] space-y-3">
+                    <div className="flex justify-between items-start gap-2">
+                      <div className="flex-1">
+                        <input 
+                          value={item.title}
+                          onChange={async (e) => {
+                            if (!partnership?.id) return;
+                            await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { title: e.target.value });
+                          }}
+                          className="w-full bg-transparent font-bold text-sm text-white focus:outline-none focus:border-rose-500/50 border-b border-transparent"
+                        />
+                        <input 
+                          value={item.description}
+                          onChange={async (e) => {
+                            if (!partnership?.id) return;
+                            await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { description: e.target.value });
+                          }}
+                          className="w-full bg-transparent text-[10px] text-slate-400 focus:outline-none"
+                        />
+                        <select
+                          value={item.category}
+                          onChange={async (e) => {
+                            if (!partnership?.id) return;
+                            await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { category: e.target.value });
+                          }}
+                          className="bg-slate-800 text-white rounded p-1 text-[10px] mt-1"
+                        >
+                          <option value="workout">Workout</option>
+                          <option value="reading">Reading</option>
+                          <option value="water">Water</option>
+                          <option value="meditation">Meditation</option>
+                          <option value="diet">Diet</option>
+                        </select>
+                      </div>
+                      <button onClick={async () => {
+                        if (!partnership?.id) return;
+                        await deleteDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id));
+                      }} className="text-slate-500 hover:text-rose-400 cursor-pointer p-1"><Trash className="w-4 h-4" /></button>
+                    </div>
+                    <div className="flex gap-2 items-center text-xs">
+                        <div className="flex items-center gap-1">
+                          <input 
+                            type="number"
+                            value={item.rewardHearts || 0}
+                            onChange={async (e) => {
+                              if (!partnership?.id) return;
+                              await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { rewardHearts: Number(e.target.value) });
+                            }}
+                            className="w-12 p-1 bg-slate-800 rounded text-center"
+                          />
+                          <span className="text-slate-500">Hearts</span>
+                        </div>
+                        
+                        <div className="flex items-center gap-1">
+                          <input 
+                            type="number"
+                            value={item.targetValue || 0}
+                            onChange={async (e) => {
+                              if (!partnership?.id) return;
+                              await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { targetValue: Number(e.target.value) });
+                            }}
+                            className="w-16 p-1 bg-slate-800 rounded text-center"
+                            placeholder="Target"
+                          />
+                          <input 
+                            type="text"
+                            value={item.unit || ''}
+                            onChange={async (e) => {
+                              if (!partnership?.id) return;
+                              await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { unit: e.target.value });
+                            }}
+                            className="w-12 p-1 bg-slate-800 rounded text-center"
+                            placeholder="Unit"
+                          />
+                        </div>
+                        <div className="flex-1">
+                          <input 
+                            type="text"
+                            value={item.rule || ''}
+                            onChange={async (e) => {
+                              if (!partnership?.id) return;
+                              await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { rule: e.target.value });
+                            }}
+                            className="w-full p-1 bg-slate-800 rounded text-center text-xs"
+                            placeholder="Rule (e.g. Before 10am)"
+                          />
+                        </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-2 pt-4">
+                <button 
+                  onClick={() => setActiveAdminAction('none')}
+                  className="w-full py-3 bg-violet-600 hover:bg-violet-700 text-white rounded-2xl text-xs font-black shadow-md cursor-pointer"
+                >
+                  Save Changes
+                </button>
+                <button 
+                  onClick={async () => {
+                    if (!partnership?.id) return;
+                    const newRef = doc(collection(db, 'partnerships', partnership.id, 'dailyItems'));
+                    await setDoc(newRef, {
+                      title: 'New Daily Item',
+                      rewardHearts: 5,
+                      completed: false,
+                      category: 'workout',
+                      description: 'New daily goal',
+                    });
+                  }}
+                  className="w-full py-3 bg-rose-500 hover:bg-rose-600 text-white rounded-2xl text-xs font-black shadow-md cursor-pointer"
+                >
+                  Add Item
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
         {activeAdminAction === 'manage_rewards' && (
           <motion.div 
             initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
