@@ -22,6 +22,7 @@ import {
   User, 
   ListTodo, 
   Clock, 
+  Timer,
   Award, 
   AlertCircle,
   CheckCircle2,
@@ -149,13 +150,42 @@ export default function UserDashboard() {
   // Drink Water Tracker states (Screen 7 in image)
   const [waterMilliliters, setWaterMilliliters] = useState<number>(() => {
     const saved = localStorage.getItem('heartgoals_water_ml');
-    return saved ? parseInt(saved) : 1500;
+    return saved ? parseInt(saved) : 0;
   });
   const [lastWaterIntakeTime, setLastWaterIntakeTime] = useState<number | null>(() => {
     const saved = localStorage.getItem('heartgoals_last_water_time');
     return saved ? parseInt(saved) : null;
   });
   const waterGoal = dailyItems.find(i => i.category === 'water')?.targetValue || 2000;
+
+  const [cooldownRemaining, setCooldownRemaining] = useState<number>(0);
+
+  useEffect(() => {
+    if (!lastWaterIntakeTime) {
+      setCooldownRemaining(0);
+      return;
+    }
+
+    const updateCooldown = () => {
+      const now = Date.now();
+      const diff = (lastWaterIntakeTime + 30 * 60 * 1000) - now;
+      if (diff > 0) {
+        setCooldownRemaining(Math.ceil(diff / 1000));
+      } else {
+        setCooldownRemaining(0);
+      }
+    };
+
+    updateCooldown();
+    const interval = setInterval(updateCooldown, 1000);
+    return () => clearInterval(interval);
+  }, [lastWaterIntakeTime]);
+
+  const formatCooldown = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const [showGiftModal, setShowGiftModal] = useState(false);
   const [requestText, setRequestText] = useState('');
@@ -313,20 +343,27 @@ export default function UserDashboard() {
   // Reset daily items if the day has changed
   useEffect(() => {
     const checkAndReset = async () => {
-      if (!partnership?.id || dailyItems.length === 0) return;
       const today = new Date().toDateString();
       const lastReset = localStorage.getItem('heartgoals_last_reset');
       
       if (lastReset !== today) {
-        for (const item of dailyItems) {
-          if (item.completed) {
-            try {
-              await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { completed: false });
-            } catch (e: any) {
-              if (e.code === 'not-found') {
-                console.log(`Daily item ${item.id} already deleted, ignoring reset.`);
-              } else {
-                console.error("Failed to reset item", e);
+        // Reset water tracker on new day
+        setWaterMilliliters(0);
+        setLastWaterIntakeTime(null);
+        localStorage.setItem('heartgoals_water_ml', '0');
+        localStorage.removeItem('heartgoals_last_water_time');
+
+        if (partnership?.id && dailyItems.length > 0) {
+          for (const item of dailyItems) {
+            if (item.completed) {
+              try {
+                await updateDoc(doc(db, 'partnerships', partnership.id, 'dailyItems', item.id), { completed: false });
+              } catch (e: any) {
+                if (e.code === 'not-found') {
+                  console.log(`Daily item ${item.id} already deleted, ignoring reset.`);
+                } else {
+                  console.error("Failed to reset item", e);
+                }
               }
             }
           }
@@ -653,8 +690,19 @@ export default function UserDashboard() {
 
   const addWater = async (amount: number) => {
     const now = Date.now();
-    if (lastWaterIntakeTime && (now - lastWaterIntakeTime < 30 * 60 * 1000)) {
-      alert("Please wait 30 minutes before adding another glass of water.");
+    if (lastWaterIntakeTime) {
+      const diff = (lastWaterIntakeTime + 30 * 60 * 1000) - now;
+      if (diff > 0) {
+        const mins = Math.floor(diff / (60 * 1000));
+        const secs = Math.floor((diff % (60 * 1000)) / 1000);
+        const timeStr = mins > 0 ? `${mins}m ${secs}s` : `${secs}s`;
+        alert(`Please wait ${timeStr} before adding another glass of water.`);
+        return;
+      }
+    }
+
+    if (waterMilliliters >= waterGoal) {
+      alert("You have already completed your daily water goal!");
       return;
     }
     
@@ -1672,6 +1720,26 @@ export default function UserDashboard() {
                 </div>
               </div>
 
+              {/* Cooldown Timer / Status Badge */}
+              <div className="flex justify-center transition-all duration-300">
+                {cooldownRemaining > 0 ? (
+                  <div className="flex items-center gap-1.5 py-1.5 px-4 bg-rose-500/10 border border-rose-500/20 rounded-full text-rose-300 font-bold text-[11px] animate-pulse">
+                    <Timer className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Next Glass in {formatCooldown(cooldownRemaining)}</span>
+                  </div>
+                ) : waterMilliliters >= waterGoal ? (
+                  <div className="flex items-center gap-1.5 py-1.5 px-4 bg-amber-500/10 border border-amber-500/20 rounded-full text-amber-300 font-bold text-[11px] animate-bounce">
+                    <Award className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Daily Hydration Completed!</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-1.5 py-1.5 px-4 bg-emerald-500/10 border border-emerald-500/20 rounded-full text-emerald-300 font-bold text-[11px]">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>Ready for next glass!</span>
+                  </div>
+                )}
+              </div>
+
               {/* Grid of Cups / Glasses (representing 250ml each) */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-1">
@@ -1684,13 +1752,19 @@ export default function UserDashboard() {
                     return (
                       <motion.button
                         key={i}
-                        whileHover={{ scale: 1.05, translateY: -1 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setWaterMilliliters((i + 1) * 250)}
-                        className={`p-2.5 rounded-xl border flex flex-col items-center justify-center relative transition-all duration-300 cursor-pointer ${
+                        whileHover={!isFilled && cooldownRemaining === 0 ? { scale: 1.05, translateY: -1 } : {}}
+                        whileTap={!isFilled && cooldownRemaining === 0 ? { scale: 0.95 } : {}}
+                        onClick={() => {
+                          if (!isFilled) {
+                            addWater(250);
+                          }
+                        }}
+                        className={`p-2.5 rounded-xl border flex flex-col items-center justify-center relative transition-all duration-300 ${
                           isFilled
-                            ? 'bg-rose-500/10 border-rose-500/40 text-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.15)]'
-                            : 'bg-slate-950/40 border-slate-800 text-slate-600 hover:text-slate-400'
+                            ? 'bg-rose-500/10 border-rose-500/40 text-rose-400 shadow-[0_0_12px_rgba(244,63,94,0.15)] cursor-default'
+                            : cooldownRemaining > 0
+                              ? 'bg-slate-950/20 border-slate-900 text-slate-700 cursor-not-allowed opacity-60'
+                              : 'bg-slate-950/40 border-slate-800 text-slate-600 hover:text-slate-400 cursor-pointer'
                         }`}
                       >
                         {isFilled && (
@@ -1707,29 +1781,34 @@ export default function UserDashboard() {
                 </div>
               </div>
 
-              {/* 5 cup additions & custom */}
+              {/* Action Buttons */}
               <div className="space-y-4">
-                <div className="grid grid-cols-3 gap-2.5">
+                <div className="grid grid-cols-2 gap-2.5">
                   <button 
                     onClick={() => addWater(250)}
-                    className="p-3 bg-[#170918] hover:bg-rose-500/10 border border-rose-500/20 hover:border-rose-500/40 rounded-2xl text-center cursor-pointer transition-all"
+                    disabled={cooldownRemaining > 0 || waterMilliliters >= waterGoal}
+                    className={`p-3 border rounded-2xl text-center transition-all flex flex-col items-center justify-center ${
+                      cooldownRemaining > 0 || waterMilliliters >= waterGoal
+                        ? 'bg-slate-950/20 border-slate-900 text-slate-600 cursor-not-allowed opacity-50'
+                        : 'bg-[#170918] hover:bg-rose-500/10 border-rose-500/20 hover:border-rose-500/40 text-rose-400 cursor-pointer'
+                    }`}
                   >
-                    <Droplet className="w-4 h-4 text-rose-400 mx-auto mb-1 animate-pulse" />
-                    <span className="text-xs font-bold text-slate-300">250ml</span>
+                    <Droplet className="w-4 h-4 text-rose-400 mb-1 animate-pulse" />
+                    <span className="text-xs font-bold text-slate-300">Log 1 Glass (+250ml)</span>
                   </button>
                   <button 
-                    onClick={() => addWater(500)}
-                    className="p-3 bg-[#170918] hover:bg-rose-500/10 border border-rose-500/20 hover:border-rose-500/40 rounded-2xl text-center cursor-pointer transition-all"
+                    onClick={() => {
+                      if (window.confirm("Are you sure you want to reset your water progress for today?")) {
+                        setWaterMilliliters(0);
+                        setLastWaterIntakeTime(null);
+                        localStorage.setItem('heartgoals_water_ml', '0');
+                        localStorage.removeItem('heartgoals_last_water_time');
+                      }
+                    }}
+                    className="p-3 bg-slate-950/40 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/40 rounded-2xl text-center cursor-pointer transition-all flex flex-col items-center justify-center"
                   >
-                    <Droplet className="w-4 h-4 text-rose-400 mx-auto mb-1 animate-pulse" />
-                    <span className="text-xs font-bold text-slate-300">500ml</span>
-                  </button>
-                  <button 
-                    onClick={() => setWaterMilliliters(0)}
-                    className="p-3 bg-slate-950/40 hover:bg-rose-500/10 border border-slate-800 hover:border-rose-500/40 rounded-2xl text-center cursor-pointer transition-all"
-                  >
-                    <Info className="w-4 h-4 text-slate-500 mx-auto mb-1" />
-                    <span className="text-xs font-bold text-slate-400">Reset</span>
+                    <Info className="w-4 h-4 text-slate-500 mb-1" />
+                    <span className="text-xs font-bold text-slate-400">Reset Today</span>
                   </button>
                 </div>
 
