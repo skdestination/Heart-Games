@@ -35,34 +35,59 @@ service cloud.firestore {
                     );
     }
 
+    function isPartnershipAdmin(partnershipId) {
+      let path = /databases/$(database)/documents/partnerships/$(partnershipId);
+      return exists(path) && get(path).data.adminId == request.auth.uid;
+    }
+
+    function isPartnershipUser(partnershipId) {
+      let path = /databases/$(database)/documents/partnerships/$(partnershipId);
+      return exists(path) && get(path).data.userId == request.auth.uid;
+    }
+
     function isPartnershipMember(partnershipId) {
-      let pDoc = get(/databases/$(database)/documents/partnerships/$(partnershipId));
-      return (pDoc != null && (pDoc.data.adminId == request.auth.uid || pDoc.data.userId == request.auth.uid));
+      let path = /databases/$(database)/documents/partnerships/$(partnershipId);
+      return exists(path) && (get(path).data.adminId == request.auth.uid || get(path).data.userId == request.auth.uid);
     }
 
     function isValidPartnership(data) {
       return data.keys().hasAll(['adminId', 'totalHearts', 'streakCount', 'createdAt']) &&
-             data.keys().size() <= 5 &&
+             data.keys().size() <= 7 &&
              data.adminId is string && data.adminId.size() <= 128 &&
              (data.userId == null || (data.userId is string && data.userId.size() <= 128)) &&
              data.totalHearts is number &&
              data.streakCount is number &&
+             (data.get('claimedLevelRewards', null) == null || data.get('claimedLevelRewards', []) is list) &&
              data.createdAt == request.time;
     }
 
     function isValidPartnershipUpdate(data) {
       return data.keys().hasAll(['adminId', 'totalHearts', 'streakCount', 'createdAt']) &&
-             data.keys().size() <= 5 &&
+             data.keys().size() <= 7 &&
              data.adminId is string && data.adminId.size() <= 128 &&
              (data.userId == null || (data.userId is string && data.userId.size() <= 128)) &&
              data.totalHearts is number &&
              data.streakCount is number &&
+             (data.get('claimedLevelRewards', null) == null || data.get('claimedLevelRewards', []) is list) &&
              data.createdAt == existing().createdAt &&
              data.adminId == existing().adminId;
     }
 
     match /partnerships/{partnershipId} {
-      allow read, write: if true;
+      allow read: if isSignedIn();
+      allow create: if isSignedIn() && isValidId(partnershipId) &&
+                    incoming().adminId == request.auth.uid &&
+                    isValidPartnership(incoming());
+      allow update: if isSignedIn() && (
+                      (isPartnershipAdmin(partnershipId) && isValidPartnershipUpdate(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['userId', 'totalHearts', 'streakCount', 'claimedLevelRewards'])) ||
+                      (isPartnershipUser(partnershipId) && isValidPartnershipUpdate(incoming()) && incoming().diff(existing()).affectedKeys().hasOnly(['totalHearts', 'streakCount', 'claimedLevelRewards'])) ||
+                      (exists(/databases/$(database)/documents/partnerships/$(partnershipId)) &&
+                       get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.userId == null &&
+                       incoming().userId == request.auth.uid &&
+                       isValidPartnershipUpdate(incoming()) &&
+                       incoming().diff(existing()).affectedKeys().hasOnly(['userId']))
+                    );
+      allow delete: if isSignedIn() && isPartnershipAdmin(partnershipId);
     }
 
     function isValidTask(data) {
@@ -101,15 +126,15 @@ service cloud.firestore {
 
     match /partnerships/{partnershipId}/tasks/{taskId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(taskId) && isPartnershipMember(partnershipId) &&
-                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
+      allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(taskId) &&
+                    isPartnershipAdmin(partnershipId) &&
                     isValidTask(incoming());
-      allow update: if isSignedIn() && isPartnershipMember(partnershipId) && isValidTaskUpdate(incoming()) &&
+      allow update: if isSignedIn() && isValidTaskUpdate(incoming()) &&
                     (
-                      (get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'rewardHearts', 'status', 'updatedAt', 'reminderCount', 'reminderInterval', 'approvalType', 'deadline', 'penaltyApplied'])) ||
-                      (get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.userId == request.auth.uid && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'penaltyApplied']) && incoming().status in ['pending', 'completed', 'approved', 'failed'])
+                      (isPartnershipAdmin(partnershipId) && incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'rewardHearts', 'status', 'updatedAt', 'reminderCount', 'reminderInterval', 'approvalType', 'deadline', 'penaltyApplied'])) ||
+                      (isPartnershipUser(partnershipId) && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'penaltyApplied']) && incoming().status in ['pending', 'completed', 'approved', 'failed'])
                     );
-      allow delete: if isSignedIn() && isPartnershipMember(partnershipId) && get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid;
+      allow delete: if isSignedIn() && isPartnershipAdmin(partnershipId);
     }
 
     function isValidReward(data) {
@@ -130,13 +155,12 @@ service cloud.firestore {
 
     match /partnerships/{partnershipId}/rewards/{rewardId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(rewardId) && isPartnershipMember(partnershipId) &&
-                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
+      allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(rewardId) &&
+                    isPartnershipAdmin(partnershipId) &&
                     isValidReward(incoming());
-      allow update: if isSignedIn() && isPartnershipMember(partnershipId) && isValidRewardUpdate(incoming()) &&
-                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
+      allow update: if isSignedIn() && isPartnershipAdmin(partnershipId) && isValidRewardUpdate(incoming()) &&
                     incoming().diff(existing()).affectedKeys().hasOnly(['title', 'cost']);
-      allow delete: if isSignedIn() && isPartnershipMember(partnershipId) && get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid;
+      allow delete: if isSignedIn() && isPartnershipAdmin(partnershipId);
     }
 
     function isValidRedemption(data) {
@@ -163,13 +187,13 @@ service cloud.firestore {
 
     match /partnerships/{partnershipId}/redemptions/{redemptionId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(redemptionId) && isPartnershipMember(partnershipId) &&
-                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.userId == request.auth.uid &&
+      allow create: if isSignedIn() && isValidId(partnershipId) && isValidId(redemptionId) &&
+                    isPartnershipUser(partnershipId) &&
                     isValidRedemption(incoming());
-      allow update: if isSignedIn() && isPartnershipMember(partnershipId) && isValidRedemptionUpdate(incoming()) &&
-                    get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid &&
+      allow update: if isSignedIn() && isValidRedemptionUpdate(incoming()) &&
+                    isPartnershipAdmin(partnershipId) &&
                     incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']);
-      allow delete: if isSignedIn() && isPartnershipMember(partnershipId) && get(/databases/$(database)/documents/partnerships/$(partnershipId)).data.adminId == request.auth.uid;
+      allow delete: if isSignedIn() && isPartnershipAdmin(partnershipId);
     }
 
     match /partnerships/{partnershipId}/dailyItems/{itemId} {
@@ -178,6 +202,11 @@ service cloud.firestore {
     }
 
     match /partnerships/{partnershipId}/requests/{requestId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() && isPartnershipMember(partnershipId);
+    }
+
+    match /partnerships/{partnershipId}/dailyHistory/{historyId} {
       allow read: if isSignedIn();
       allow write: if isSignedIn() && isPartnershipMember(partnershipId);
     }

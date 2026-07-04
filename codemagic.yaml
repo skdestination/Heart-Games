@@ -45,7 +45,7 @@ workflows:
           cd android
           # Update version code and name in build.gradle
           sed -i "s/versionCode [0-9]*/versionCode $BUILD_NUMBER/" app/build.gradle
-          sed -i "s/versionName \"[0-9.]*\"/versionName \"1.0.$BUILD_NUMBER\"/" app/build.gradle
+          sed -i "s/versionName \"[0-9.]*\"/versionName \"2.0.$BUILD_NUMBER\"/" app/build.gradle
           ./gradlew assembleDebug
     artifacts:
       - android/app/build/outputs/apk/**/*.apk

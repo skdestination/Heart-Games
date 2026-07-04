@@ -69,6 +69,45 @@
         "updatedAt": { "type": "string" }
       },
       "required": ["rewardId", "rewardTitle", "cost", "status", "createdAt", "updatedAt"]
+    },
+    "DailyItem": {
+      "title": "DailyItem",
+      "description": "A daily progress item.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "rewardHearts": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "completedAt": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["title", "rewardHearts"]
+    },
+    "Request": {
+      "title": "Request",
+      "description": "A custom request or milestone.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "cost": { "type": "number" },
+        "status": { "type": "string", "enum": ["pending", "completed", "approved"] },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "cost", "status", "createdAt"]
+    },
+    "DailyHistory": {
+      "title": "DailyHistory",
+      "description": "Log of completed daily items.",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string" },
+        "completed": { "type": "boolean" },
+        "completedAt": { "type": "string" },
+        "rewardHearts": { "type": "number" }
+      },
+      "required": ["itemId", "completed", "completedAt", "rewardHearts"]
     }
   },
   "firestore": {
@@ -91,6 +130,18 @@
     "partnerships/{partnershipId}/redemptions/{redemptionId}": {
       "schema": { "$ref": "#/entities/Redemption" },
       "description": "Redemptions in a partnership"
+    },
+    "partnerships/{partnershipId}/dailyItems/{itemId}": {
+      "schema": { "$ref": "#/entities/DailyItem" },
+      "description": "Daily items in a partnership"
+    },
+    "partnerships/{partnershipId}/requests/{requestId}": {
+      "schema": { "$ref": "#/entities/Request" },
+      "description": "Milestone / gift requests in a partnership"
+    },
+    "partnerships/{partnershipId}/dailyHistory/{historyId}": {
+      "schema": { "$ref": "#/entities/DailyHistory" },
+      "description": "Daily history logs in a partnership"
     }
   }
 }

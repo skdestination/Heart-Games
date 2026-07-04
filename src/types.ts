@@ -28,6 +28,7 @@ export interface DailyProgressItem {
   targetValue?: number; // e.g. 2000 for water
   unit?: string; // e.g. 'ml'
   rule?: string; // e.g. 'Complete before 10 AM'
+  order?: number;
 }
 
 export interface Task {
